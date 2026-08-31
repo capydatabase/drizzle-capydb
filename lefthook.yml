@@ -1,0 +1,6 @@
+# https://lefthook.dev/configuration/
+# Rules live in .commitlintrc.yml; CI re-checks pushed commits against the same file.
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}

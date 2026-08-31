@@ -1,3 +1,6 @@
+allowBuilds:
+  # The repos use lefthook for git hooks; its postinstall is what installs them.
+  lefthook: true
 # Bleeding-edge policy: we intentionally consume fresh releases (typescript
 # native previews, oxc tooling, same-day @capydb packages), so pnpm's
 # minimum-release-age supply-chain gate is disabled here like in the other

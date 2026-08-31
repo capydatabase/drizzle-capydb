@@ -616,9 +616,7 @@ async function runWithTransactionLocalSettings<TRelations extends AnyRelations, 
 ): Promise<T> {
   return db.transaction(async (tx) => {
     if (settings.length > 0) {
-      const assignments = settings.map(
-        ([name, value]) => sql`set_config(${name}, ${value}, true)`,
-      );
+      const assignments = settings.map(([name, value]) => sql`set_config(${name}, ${value}, true)`);
       await tx.execute(sql`select ${sql.join(assignments, sql`, `)}`);
     }
     return callback(tx);
