@@ -15,7 +15,7 @@
   "homepage": "https://capydb.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/capy-base/capydb-drizzle"
+    "url": "https://github.com/capydatabase/capydb-drizzle"
   },
   "license": "MIT",
   "type": "module",
