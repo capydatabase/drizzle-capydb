@@ -5,6 +5,18 @@ All notable changes to `@capydb/drizzle` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-09-02
+
+### Dependencies
+
+- **deps:** bump @types/node, oxfmt, and oxlint ([9eef9ed](https://github.com/capy-base/drizzle-capydb/commit/9eef9ed))
+
+### Miscellaneous Chores
+
+- bump dev tooling (@types/node, lefthook) ([2a7fff0](https://github.com/capy-base/drizzle-capydb/commit/2a7fff0))
+- update pnpm to version 12.0.0 in package.json and pnpm-lock.yaml ([bb64a3b](https://github.com/capy-base/drizzle-capydb/commit/bb64a3b))
+- update pnpm workspace configuration and improve TypeScript settings ([8290373](https://github.com/capy-base/drizzle-capydb/commit/8290373))
+
 ## [1.6.0] - 2026-08-18
 
 ### Added
@@ -53,3 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release: `createDb`/`createDirectDb` factories with pooler-safe transaction-mode defaults (`prepare: false` on :6432), `resolveConnectionString`, `isPooledUrl`, and `resolveClientOptions`.
 - `createDirectDb` enforces a direct (non-pooled) connection for migrations.
+
+[1.6.1]: https://github.com/capy-base/drizzle-capydb/compare/v1.6.0...v1.6.1
+[1.6.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.4.0...v1.6.0
+[1.4.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.2.0...v1.4.0
+[1.2.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/capy-base/drizzle-capydb/releases/tag/v1.0.0
