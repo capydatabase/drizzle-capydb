@@ -5,6 +5,11 @@ All notable changes to `@capydb/drizzle` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.3] - 2026-09-07
+
+### Fixed
+- Repository URLs in the package metadata and changelog now point to the `capydatabase` organization, so links from the npm listing resolve correctly ([82692b3](https://github.com/capy-base/drizzle-capydb/commit/82692b3))
+
 ## [1.6.1] - 2026-09-02
 
 ### Dependencies
@@ -66,9 +71,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: `createDb`/`createDirectDb` factories with pooler-safe transaction-mode defaults (`prepare: false` on :6432), `resolveConnectionString`, `isPooledUrl`, and `resolveClientOptions`.
 - `createDirectDb` enforces a direct (non-pooled) connection for migrations.
 
-[1.6.1]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.0...v1.6.1
-[1.6.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.4.0...v1.6.0
-[1.4.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.2.0...v1.4.0
-[1.2.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/capydatabase/drizzle-capydb/releases/tag/v1.0.0
+[1.6.3]: https://github.com/capy-base/drizzle-capydb/compare/v1.6.1...v1.6.3
+[1.6.1]: https://github.com/capy-base/drizzle-capydb/compare/v1.6.0...v1.6.1
+[1.6.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.4.0...v1.6.0
+[1.4.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.2.0...v1.4.0
+[1.2.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/capy-base/drizzle-capydb/releases/tag/v1.0.0
