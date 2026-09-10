@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.4] - 2026-09-10
+
 ### Fixed
 
 - **`pnpm build` failed on every second run.** `tsdown`'s `clean: true` deletes `dist` while tsc's
@@ -103,10 +105,12 @@ All three come from the myroomiev3 migration, where each cost a debugging round.
 - Initial release: `createDb`/`createDirectDb` factories with pooler-safe transaction-mode defaults (`prepare: false` on :6432), `resolveConnectionString`, `isPooledUrl`, and `resolveClientOptions`.
 - `createDirectDb` enforces a direct (non-pooled) connection for migrations.
 
-[1.6.3]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.1...v1.6.3
-[1.6.1]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.0...v1.6.1
-[1.6.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.4.0...v1.6.0
-[1.4.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.2.0...v1.4.0
-[1.2.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/capydatabase/drizzle-capydb/releases/tag/v1.0.0
+[Unreleased]: https://github.com/capy-base/drizzle-capydb/compare/v1.6.4...HEAD
+[1.6.4]: https://github.com/capy-base/drizzle-capydb/compare/v1.6.3...v1.6.4
+[1.6.3]: https://github.com/capy-base/drizzle-capydb/compare/v1.6.1...v1.6.3
+[1.6.1]: https://github.com/capy-base/drizzle-capydb/compare/v1.6.0...v1.6.1
+[1.6.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.4.0...v1.6.0
+[1.4.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.2.0...v1.4.0
+[1.2.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/capy-base/drizzle-capydb/releases/tag/v1.0.0

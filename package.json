@@ -1,6 +1,6 @@
 {
   "name": "@capydb/drizzle",
-  "version": "1.6.3",
+  "version": "1.6.4",
   "description": "Official Drizzle ORM helpers for CapyDB - pooled-aware postgres-js clients with safe transaction-pooler defaults.",
   "keywords": [
     "capydb",
