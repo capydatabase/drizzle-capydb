@@ -5,10 +5,42 @@ All notable changes to `@capydb/drizzle` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`pnpm build` failed on every second run.** `tsdown`'s `clean: true` deletes `dist` while tsc's
+  `.tsbuildinfo` still claimed the declarations were current, so emit was skipped and the build died
+  on `cp dist/index.d.ts`. `tsconfig.build.json` now sets `incremental: false` — the declaration
+  build is fast and the cache was actively harmful, because it tracks outputs another tool deletes.
+  `*.tsbuildinfo` is also gitignored now (it is still tracked in git and needs untracking once).
+
+### Added
+
+- **`timestamps: "iso"` on `createDb` / `createDirectDb`, plus an `isoTimestamp()` column type.**
+  Two separate defects, both Safari-visible (`new Date('2026-09-10 10:49:14+00')` is `Invalid Date`
+  there). drizzle replaces the postgres-js driver's type parsers while constructing the database, so
+  parsers installed beforehand are silently discarded and `timestamptz` arrives as Postgres text —
+  the option installs them afterwards. Relational queries (`with: { ... }`) are a second path
+  entirely: they nest rows through `row_to_json` and cast string-mode timestamps `::text` first,
+  never reaching the driver parsers, so those columns need `isoTimestamp()`, which carries both
+  `fromDriver` and `fromJson`. `toIsoTimestamp` and `installTimestampParsers` are exported for
+  hand-rolled clients.
+- **`NestedDbTransactionError`** — opening a claims block inside another one now throws instead of
+  deadlocking. With `max: 1` (the serverless default behind the pooler) the outer transaction holds
+  the only connection while the inner block waits for one, forever; a larger local pool hides it, so
+  the bug ships. Guarded with `AsyncLocalStorage`, so it is per-request rather than global.
+- **`AbortedDbTransactionError`** — a caught statement error leaves the transaction in SQLSTATE
+  `25P02`, and Postgres then refuses everything after it, surfacing at whatever ran next and
+  pointing at the wrong line. The block now translates that into a named error carrying the
+  savepoint guidance.
+
+All three come from the myroomiev3 migration, where each cost a debugging round.
+
 ## [1.6.3] - 2026-09-07
 
 ### Fixed
-- Repository URLs in the package metadata and changelog now point to the `capydatabase` organization, so links from the npm listing resolve correctly ([82692b3](https://github.com/capy-base/drizzle-capydb/commit/82692b3))
+- Repository URLs in the package metadata and changelog now point to the `capydatabase` organization, so links from the npm listing resolve correctly ([82692b3](https://github.com/capydatabase/drizzle-capydb/commit/82692b3))
 
 ## [1.6.1] - 2026-09-02
 
@@ -71,10 +103,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release: `createDb`/`createDirectDb` factories with pooler-safe transaction-mode defaults (`prepare: false` on :6432), `resolveConnectionString`, `isPooledUrl`, and `resolveClientOptions`.
 - `createDirectDb` enforces a direct (non-pooled) connection for migrations.
 
-[1.6.3]: https://github.com/capy-base/drizzle-capydb/compare/v1.6.1...v1.6.3
-[1.6.1]: https://github.com/capy-base/drizzle-capydb/compare/v1.6.0...v1.6.1
-[1.6.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.4.0...v1.6.0
-[1.4.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.2.0...v1.4.0
-[1.2.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/capy-base/drizzle-capydb/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/capy-base/drizzle-capydb/releases/tag/v1.0.0
+[1.6.3]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.1...v1.6.3
+[1.6.1]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.0...v1.6.1
+[1.6.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.4.0...v1.6.0
+[1.4.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.2.0...v1.4.0
+[1.2.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/capydatabase/drizzle-capydb/releases/tag/v1.0.0

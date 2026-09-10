@@ -1,3 +1,10 @@
 node_modules/
 dist/
 .DS_Store
+
+# tsc's incremental cache. It is a build artifact, and a stale one is not
+# harmless here: tsdown's `clean: true` wipes dist while this file still claims
+# the declarations are current, so emit is skipped and the build fails on
+# `cp dist/index.d.ts`. tsconfig.build.json sets incremental:false for that
+# reason; this keeps a stray one out of the repo.
+*.tsbuildinfo

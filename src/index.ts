@@ -26,8 +26,11 @@
  * friends, which psql users add) are stripped before postgres-js can forward
  * them as startup parameters - see {@link stripLibpqTLSParams}.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { sql, type AnyRelations, type DrizzleConfig, type EmptyRelations } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import { customType } from "drizzle-orm/pg-core";
 import postgres, { type Options, type PostgresType, type Sql } from "postgres";
 
 /** postgres-js client options as accepted by `postgres(url, options)`. */
@@ -111,6 +114,18 @@ export interface CapyDBDrizzleOptions<TRelations extends AnyRelations = EmptyRel
    * to different backends and prepared statements will randomly not exist.
    */
   client?: ClientOptions;
+  /**
+   * `"iso"` installs ISO 8601 timestamp parsers on the client AFTER drizzle
+   * has constructed it - drizzle replaces the driver's parsers during
+   * construction, so installing them yourself beforehand is silently undone
+   * and `timestamptz` arrives as Postgres text (`2026-09-10 10:49:14+00`),
+   * which Safari's `Date` rejects.
+   *
+   * This covers plain selects. Relational queries (`with: { ... }`) nest rows
+   * through `row_to_json` and never reach the driver parsers - use the
+   * {@link isoTimestamp} column type for those.
+   */
+  timestamps?: "iso" | "driver";
   /**
    * Relations built with drizzle's `defineRelations`, enabling the relational
    * query API (`db.query.*`). Optional - plain `db.select().from(table)`
@@ -290,12 +305,17 @@ function createFromSources<TRelations extends AnyRelations>(
     sanitized,
     resolveClientOptions(sanitized, options.pooled, options.client),
   );
-  return drizzle<TRelations>({
+  const database = drizzle<TRelations>({
     client,
     relations: options.relations,
     logger: options.logger,
     jit: options.jit,
   });
+  // AFTER drizzle(): it replaces client.options.parsers during construction.
+  if (options.timestamps === "iso") {
+    installTimestampParsers(client);
+  }
+  return database;
 }
 
 /**
@@ -609,18 +629,41 @@ function authContextSettings(context: AuthContext): Array<[string, string]> {
   return settings;
 }
 
+/**
+ * Tracks whether a claims block is already open on this async execution path.
+ * A module-level boolean would be wrong under concurrency; AsyncLocalStorage
+ * scopes it to the request.
+ */
+const activeClaimsBlock = new AsyncLocalStorage<true>();
+
 async function runWithTransactionLocalSettings<TRelations extends AnyRelations, T>(
   db: Pick<PostgresJsDatabase<TRelations>, "transaction">,
   settings: Array<[string, string]>,
   callback: (tx: AuthContextTransaction<TRelations>) => Promise<T>,
 ): Promise<T> {
-  return db.transaction(async (tx) => {
-    if (settings.length > 0) {
-      const assignments = settings.map(([name, value]) => sql`set_config(${name}, ${value}, true)`);
-      await tx.execute(sql`select ${sql.join(assignments, sql`, `)}`);
-    }
-    return callback(tx);
-  });
+  if (activeClaimsBlock.getStore()) {
+    throw new NestedDbTransactionError();
+  }
+  return activeClaimsBlock.run(true, () =>
+    db.transaction(async (tx) => {
+      if (settings.length > 0) {
+        const assignments = settings.map(
+          ([name, value]) => sql`set_config(${name}, ${value}, true)`,
+        );
+        await tx.execute(sql`select ${sql.join(assignments, sql`, `)}`);
+      }
+      try {
+        return await callback(tx);
+      } catch (error) {
+        // 25P02 means an earlier statement in this block failed and was
+        // caught; the error surfaces here, pointing at the wrong line.
+        if (sqlState(error) === "25P02") {
+          throw new AbortedDbTransactionError(error);
+        }
+        throw error;
+      }
+    }),
+  );
 }
 
 /**
@@ -671,4 +714,132 @@ export async function withSupabaseJwtClaims<TRelations extends AnyRelations, T>(
     [["request.jwt.claims", JSON.stringify(claims)]],
     callback,
   );
+}
+
+/* -------------------------------------------------------------------------
+ * Timestamps
+ *
+ * Two separate defects, both found on the myroomiev3 migration and both
+ * Safari-visible (`new Date('2026-09-10 10:49:14+00')` is `Invalid Date`
+ * there, because the space-separated form is not ISO 8601):
+ *
+ * 1. drizzle overwrites the postgres-js driver's type parsers when it
+ *    constructs the database, so parsers installed before `createDb` are
+ *    discarded and `timestamptz` arrives as Postgres text.
+ * 2. Relational queries (`with: { ... }`) build nested rows with `row_to_json`
+ *    and cast string-mode timestamps `::text` first, bypassing the driver
+ *    parsers entirely. Only a column type carrying `fromJson` fixes that path.
+ *
+ * `timestamps: "iso"` handles (1); `isoTimestamp()` handles (2).
+ * ---------------------------------------------------------------------- */
+
+const TIMESTAMPTZ_OID = 1184;
+const TIMESTAMP_OID = 1114;
+
+/**
+ * Normalise Postgres timestamp text to ISO 8601 without losing precision.
+ *
+ * `2026-02-24 13:51:20.44+00` -> `2026-02-24T13:51:20.44+00:00`, and a value
+ * with no zone (`2026-02-24 13:51:20`) simply gains the `T`.
+ */
+export function toIsoTimestamp(value: string): string {
+  return value.replace(" ", "T").replace(/([+-]\d{2})$/u, "$1:00");
+}
+
+/**
+ * Install the ISO timestamp parsers on a postgres-js client. Idempotent.
+ *
+ * Must run AFTER `drizzle()` has been handed the client - drizzle replaces
+ * `client.options.parsers` during construction, so an earlier call is silently
+ * undone. `createDb({ timestamps: "iso" })` does this for you.
+ */
+export function installTimestampParsers(client: Sql): void {
+  const parsers = (client.options as { parsers: Record<string, (value: string) => unknown> })
+    .parsers;
+  parsers[String(TIMESTAMPTZ_OID)] = toIsoTimestamp;
+  parsers[String(TIMESTAMP_OID)] = toIsoTimestamp;
+}
+
+/**
+ * A `timestamp` / `timestamptz` column that is an ISO 8601 string on every
+ * path - plain selects AND the `row_to_json` nesting that relational queries
+ * use. `timestamp({ mode: "string" })` only covers the first.
+ *
+ * @example
+ * ```ts
+ * export const posts = pgTable("posts", {
+ *   id: uuid().primaryKey(),
+ *   createdAt: isoTimestamp("created_at", { withTimezone: true }).notNull(),
+ * })
+ * ```
+ */
+export const isoTimestamp = customType<{
+  data: string;
+  driverData: string;
+  jsonData: string;
+  config: { withTimezone?: boolean };
+}>({
+  dataType(config) {
+    return config?.withTimezone ? "timestamp with time zone" : "timestamp";
+  },
+  fromDriver: toIsoTimestamp,
+  fromJson: toIsoTimestamp,
+});
+
+/* -------------------------------------------------------------------------
+ * Transaction hygiene
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Thrown when a `withAuthContext` / `withSupabaseJwtClaims` block is opened
+ * inside another one.
+ *
+ * This deadlocks only in production, which is why it earns a dedicated error:
+ * with `max: 1` per instance (the serverless default behind the pooler) the
+ * outer transaction holds the single connection while the inner block waits
+ * for one, forever. On a developer machine with a larger pool it usually just
+ * works, so the bug ships.
+ */
+export class NestedDbTransactionError extends Error {
+  constructor() {
+    super(
+      "@capydb/drizzle: a claims block was opened inside another one. With max: 1 " +
+        "this deadlocks - the outer transaction holds the only connection. Pass the " +
+        "transaction handle you already have (`tx`) down instead of opening a new block.",
+    );
+    this.name = "NestedDbTransactionError";
+  }
+}
+
+/**
+ * Thrown when a statement inside the block failed and was caught, leaving the
+ * transaction aborted (SQLSTATE 25P02).
+ *
+ * Postgres refuses every subsequent statement in that transaction, so the
+ * failure surfaces at whatever ran next - pointing at the wrong line. Wrap
+ * fail-soft statements in a savepoint (`tx.transaction(async (sp) => ...)`)
+ * so a caught error rolls back only that statement.
+ */
+export class AbortedDbTransactionError extends Error {
+  constructor(cause: unknown) {
+    super(
+      "@capydb/drizzle: a statement in this block failed and was caught, so the " +
+        "transaction is aborted (SQLSTATE 25P02) and nothing after it ran. Wrap " +
+        "fail-soft statements in a savepoint: tx.transaction(async (sp) => ...).",
+      { cause },
+    );
+    this.name = "AbortedDbTransactionError";
+  }
+}
+
+/** Dig the SQLSTATE out of a driver error, including drizzle's wrapper. */
+function sqlState(error: unknown): string | undefined {
+  for (let current = error, depth = 0; current && depth < 5; depth++) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string") {
+      return code;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
 }

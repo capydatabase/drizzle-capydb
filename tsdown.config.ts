@@ -8,4 +8,9 @@ export default defineConfig({
   format: ['esm', 'cjs'],
   clean: true,
   platform: 'neutral',
+  // Node builtins are externals, not bundle inputs. The package already
+  // requires Node (postgres-js opens real sockets, and engines.node is
+  // >=24.21.0); under the neutral platform rolldown does not assume that, so
+  // `node:async_hooks` resolves as "module not found" and warns on every build.
+  external: [/^node:/],
 })
