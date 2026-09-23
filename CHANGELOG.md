@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `packageManager` is `pnpm@12.5.1` (was `pnpm@11.27.1`), matching the other CapyDB JS repos; the
+  lockfile records the same pnpm version.
+
 ## [1.6.4] - 2026-09-10
 
 ### Fixed
