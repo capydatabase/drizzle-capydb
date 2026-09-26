@@ -54,7 +54,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.3",
     "drizzle-orm": "rc5",
     "lefthook": "^2.1.14",
     "oxfmt": "^0.70.0",
@@ -62,9 +62,9 @@
     "postgres": "^3.4.9",
     "tsdown": "0.23.0",
     "typescript": "next",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.2"
   },
-  "packageManager": "pnpm@12.5.1",
+  "packageManager": "pnpm@11.28.0",
   "engines": {
     "node": ">=24.21.0"
   },
