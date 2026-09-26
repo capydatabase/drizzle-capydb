@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.5] - 2026-09-26
+
 ### Fixed
 
 - The npm `repository` link pointed at a repository that does not exist; it now points at this one.
@@ -114,7 +116,8 @@ All three come from the myroomiev3 migration, where each cost a debugging round.
 - Initial release: `createDb`/`createDirectDb` factories with pooler-safe transaction-mode defaults (`prepare: false` on :6432), `resolveConnectionString`, `isPooledUrl`, and `resolveClientOptions`.
 - `createDirectDb` enforces a direct (non-pooled) connection for migrations.
 
-[Unreleased]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.4...HEAD
+[Unreleased]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.5...HEAD
+[1.6.5]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.4...v1.6.5
 [1.6.4]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.1...v1.6.3
 [1.6.1]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.0...v1.6.1
