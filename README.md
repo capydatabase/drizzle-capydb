@@ -145,6 +145,74 @@ export default defineConfig({
 })
 ```
 
+## Scale-to-zero: pauses and warm-ups
+
+A cell on scale-to-zero pauses after a quiet spell and resumes on the next
+connection. A *new* connection to a paused cell is held while it resumes, so
+it only sees a slower connect. What needs handling is a connection that was
+already open when the cell paused - a long-lived server between requests, or a
+serverless instance frozen between invocations:
+
+- the statement in flight fails with `CONNECTION_CLOSED`,
+- the next statement on that connection receives the server's `57P01`
+  (`terminating connection due to administrator command`),
+- the one after that reconnects cleanly - postgres-js replaces the dead
+  connection itself.
+
+CapyDB does not pause a cell while a statement or transaction is open on it,
+so in practice this hits idle connections, and the failing statement is the
+first one after the pause.
+
+`retryOnPause` absorbs exactly those failures and rethrows everything else
+untouched. Wrap work that is safe to run twice - a read, or a whole
+transaction (one cut off by the pause was rolled back by the server):
+
+```ts
+import { retryOnPause, withAuthContext } from '@capydb/drizzle'
+
+const rows = await retryOnPause(() => db.select().from(users))
+
+const todos = await retryOnPause(() =>
+  withAuthContext(db, { userId }, (tx) => tx.select().from(schema.todos)),
+)
+```
+
+Wrap the whole `db.transaction(...)` call, never a statement inside it - the
+transaction's connection is gone, so an inner retry can only fail again. Do
+not wrap a single write outside a transaction: if the connection closed after
+the server committed, the retry would apply it twice. Nothing in this package
+retries implicitly, because only you know which work is idempotent.
+
+The default budget is 3 attempts (100 ms backoff, doubling, at most 2 s) -
+the minimum that covers both failures. When it runs out, `retryOnPause`
+throws `CellPausedError`, with the last pause error as its `cause`. Tune it
+with `{ attempts, baseDelayMs, maxDelayMs, signal }`.
+
+**Cron jobs, CI steps and migrations** that are the first thing to touch a
+paused cell can warm it up explicitly with `waitForWake`, which retries a
+`select 1` (10 attempts, 250 ms doubling to at most 5 s - about 30 s in total)
+and throws `CellPausedError` if the cell never answers:
+
+```ts
+// scripts/migrate.ts - or the first step of a scheduled job
+import { createDirectDb, waitForWake } from '@capydb/drizzle'
+import { migrate } from 'drizzle-orm/postgres-js/migrator'
+
+const db = createDirectDb()
+await waitForWake(db.$client, { signal: AbortSignal.timeout(60_000) })
+await migrate(db, { migrationsFolder: './drizzle' })
+await db.$client.end()
+```
+
+A cron handler that runs every few minutes keeps the cell awake as a side
+effect; that is a property of the schedule, not something to rely on. For a
+cell that must never pause, turn scale-to-zero off for the project with
+`capydb projects always-on on`.
+
+`isCellWakingError(error)` - the classifier both helpers use - is exported for
+building your own policy. It follows `cause` chains, so it sees through
+drizzle's query-error wrapper.
+
 ## Row-level security context
 
 If your database uses RLS with the vanilla GUC convention (what
@@ -199,6 +267,14 @@ claims object as `request.jwt.claims` for the `auth.uid()` shim to read.
   `request.jwt.claims` for databases using the supabase-compat shim.
 - `AuthContext` / `AuthContextTransaction<TRelations>` - the context shape and
   the transaction handle type passed to the callbacks.
+- `retryOnPause(operation, options?)` - re-runs idempotent work (a read or a
+  whole transaction) when a pause cut it off. Throws `CellPausedError` once
+  the attempt budget is spent.
+- `waitForWake(client, options?)` - bounded warm-up for cron, CI and
+  migrations; throws `CellPausedError` if the cell never answers.
+- `isCellWakingError(error)` - whether an error is a pause/resume condition.
+- `CellPausedError` - the typed error both helpers throw; `attempts` and the
+  last pause error as `cause`.
 - `resolveConnectionString(explicit, envVarNames, env?)`,
   `resolveClientOptions(connectionString, pooled, overrides?)`,
   `isPooledUrl(connectionString)` - the pure resolution helpers, exported for

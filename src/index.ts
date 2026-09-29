@@ -416,6 +416,11 @@ export function createDirectDb<TRelations extends AnyRelations = EmptyRelations>
 const WAKE_TRANSIENT_CODES = new Set([
   "57P01", // admin_shutdown - the cell was paused mid-session
   "57P03", // cannot_connect_now - still resuming
+  // postgres-js's own code for "the server closed this socket". It is what a
+  // statement in flight at the moment of the pause actually receives: the
+  // 57P01 the server sent is then delivered to the NEXT statement on that
+  // connection, and only the one after that reconnects cleanly.
+  "CONNECTION_CLOSED",
   "08006", // connection_failure
   "08001", // sqlclient_unable_to_establish_sqlconnection
   "08000", // connection_exception
@@ -430,9 +435,9 @@ const WAKE_TRANSIENT_CODES = new Set([
  * Report whether an error is a transient pause/resume condition that is worth
  * retrying, as opposed to a real failure.
  *
- * Exported so callers can build their own retry policy: this package
- * deliberately does not wrap query execution, because retrying an arbitrary
- * statement is only safe when the caller knows it is idempotent.
+ * {@link retryOnPause} is the ready-made policy built on this; it is exported
+ * for callers who want their own. Retrying is only safe for work the caller
+ * knows is idempotent, which is why nothing here retries implicitly.
  *
  * @example
  * ```ts
@@ -451,16 +456,84 @@ export function isCellWakingError(error: unknown): boolean {
   return cause !== undefined && cause !== error ? isCellWakingError(cause) : false;
 }
 
-/** Options for {@link waitForWake}. */
-export interface WaitForWakeOptions {
-  /** Maximum attempts before giving up. Default 10. */
+/** Backoff settings shared by {@link waitForWake} and {@link retryOnPause}. */
+export interface PauseRetryOptions {
+  /** Maximum attempts, the first one included. */
   attempts?: number;
-  /** Initial backoff in milliseconds; doubles per attempt. Default 250. */
+  /** Initial backoff in milliseconds; doubles per attempt. */
   baseDelayMs?: number;
-  /** Upper bound on a single backoff interval. Default 5000. */
+  /** Upper bound on a single backoff interval. */
   maxDelayMs?: number;
   /** Abort the wait early (e.g. a CI job timeout). */
   signal?: AbortSignal;
+}
+
+/**
+ * Options for {@link waitForWake}. Defaults: 10 attempts, 250 ms doubling to at
+ * most 5000 ms - about 30 s in total, sized for a cold resume.
+ */
+export type WaitForWakeOptions = PauseRetryOptions;
+
+/**
+ * Options for {@link retryOnPause}. Defaults: 3 attempts, 100 ms doubling to at
+ * most 2000 ms. Three is the minimum that rides out a pause: the statement in
+ * flight fails with `CONNECTION_CLOSED`, the next one receives the server's
+ * `57P01`, and the third reconnects - through the routing layer, which holds
+ * the new connection while the cell resumes.
+ */
+export type RetryOnPauseOptions = PauseRetryOptions;
+
+/**
+ * Thrown when work kept failing with pause/resume errors (see
+ * {@link isCellWakingError}) until the attempt budget ran out. The last
+ * transient error is the `cause`.
+ *
+ * Seeing this means the cell did not come back within the budget, not that
+ * the work itself is wrong: raise `attempts`, or check the project's state in
+ * the dashboard.
+ */
+export class CellPausedError extends Error {
+  /** How many attempts were made before giving up. */
+  readonly attempts: number;
+
+  constructor(attempts: number, cause: unknown) {
+    const code = sqlState(cause);
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(
+      `@capydb/drizzle: the cell did not become ready after ${attempts} attempts ` +
+        `(last error${code === undefined ? "" : ` ${code}`}: ${detail}). It was paused or ` +
+        `resuming; raise \`attempts\` or check the project's state.`,
+      { cause },
+    );
+    this.name = "CellPausedError";
+    this.attempts = attempts;
+  }
+}
+
+/** Run `operation`, retrying pause/resume errors with exponential backoff. */
+async function retryTransient<T>(
+  operation: () => Promise<T>,
+  options: PauseRetryOptions,
+  defaults: Required<Omit<PauseRetryOptions, "signal">>,
+): Promise<T> {
+  const attempts = options.attempts ?? defaults.attempts;
+  const baseDelayMs = options.baseDelayMs ?? defaults.baseDelayMs;
+  const maxDelayMs = options.maxDelayMs ?? defaults.maxDelayMs;
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    options.signal?.throwIfAborted();
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isCellWakingError(error)) throw error;
+      lastError = error;
+      if (attempt === attempts - 1) break;
+      const delay = Math.min(baseDelayMs * 2 ** attempt, maxDelayMs);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw new CellPausedError(attempts, lastError);
 }
 
 /**
@@ -477,6 +550,9 @@ export interface WaitForWakeOptions {
  * Non-transient errors (bad credentials, a real SQL error) are rethrown
  * immediately rather than retried.
  *
+ * @throws CellPausedError when the cell is still not answering after
+ *   `attempts` tries.
+ *
  * @example
  * ```ts
  * const db = createDirectDb()
@@ -485,29 +561,53 @@ export interface WaitForWakeOptions {
  * ```
  */
 export async function waitForWake(client: Sql, options: WaitForWakeOptions = {}): Promise<void> {
-  const attempts = options.attempts ?? 10;
-  const baseDelayMs = options.baseDelayMs ?? 250;
-  const maxDelayMs = options.maxDelayMs ?? 5000;
-
-  let lastError: unknown;
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    options.signal?.throwIfAborted();
-    try {
+  await retryTransient(
+    async () => {
       await client`select 1`;
-      return;
-    } catch (error) {
-      if (!isCellWakingError(error)) throw error;
-      lastError = error;
-      if (attempt === attempts - 1) break;
-      const delay = Math.min(baseDelayMs * 2 ** attempt, maxDelayMs);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-  throw new Error(
-    `cell did not become ready after ${attempts} attempts: ${
-      lastError instanceof Error ? lastError.message : String(lastError)
-    }`,
+    },
+    options,
+    { attempts: 10, baseDelayMs: 250, maxDelayMs: 5000 },
   );
+}
+
+/**
+ * Run idempotent work, re-running it when the cell was paused underneath it.
+ *
+ * Scale-to-zero can pause a cell between two requests, and the connections it
+ * held die with it. postgres-js reconnects on its own, but not before up to two
+ * statements fail on the dead connection (see {@link RetryOnPauseOptions}).
+ * This absorbs exactly those failures and nothing else: any other error is
+ * rethrown untouched on the first attempt.
+ *
+ * Only wrap work that is safe to run twice. Two shapes are:
+ *
+ * - **A read.** Re-running a `select` cannot change anything.
+ * - **A whole transaction.** A transaction cut off by the pause was rolled back
+ *   by the server, so running the entire callback again is the correct retry.
+ *   Wrap the `db.transaction(...)` (or {@link withAuthContext}) call, never a
+ *   statement inside it - the transaction's connection is gone, so a retry
+ *   inside the callback can only fail again.
+ *
+ * Do not wrap a single write outside a transaction: if the connection closed
+ * after the server committed, the retry applies it a second time.
+ *
+ * @throws CellPausedError when every attempt failed with a pause/resume
+ *   error; the last one is its `cause`.
+ *
+ * @example
+ * ```ts
+ * const rows = await retryOnPause(() => db.select().from(users))
+ *
+ * const todos = await retryOnPause(() =>
+ *   withAuthContext(db, { userId }, (tx) => tx.select().from(schema.todos)),
+ * )
+ * ```
+ */
+export async function retryOnPause<T>(
+  operation: () => Promise<T>,
+  options: RetryOnPauseOptions = {},
+): Promise<T> {
+  return retryTransient(operation, options, { attempts: 3, baseDelayMs: 100, maxDelayMs: 2000 });
 }
 
 /**

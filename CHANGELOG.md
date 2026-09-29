@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`retryOnPause(operation, options?)`** - re-runs idempotent work when a scale-to-zero pause
+  cut it off. A connection that was open when the cell paused fails twice before postgres-js
+  replaces it: the statement in flight with `CONNECTION_CLOSED`, then the next one with the
+  server's `57P01`. The default budget (3 attempts, 100 ms backoff doubling to 2 s) covers both;
+  any other error is rethrown untouched on the first attempt. Wrap a read or a whole transaction
+  - a transaction cut off by the pause was rolled back, so re-running it is safe - never a single
+  write outside a transaction.
+- **`CellPausedError`** - thrown by `retryOnPause` and `waitForWake` when the attempt budget runs
+  out, with `attempts` and the last pause error as `cause`.
+
 - `LICENSE` with the MIT license text (the package was already declared MIT); it now ships in the
   npm tarball.
 
@@ -19,6 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer fails them. No change to the published package.
 - CI checks formatting: `pnpm format:check` (`oxfmt --check`) runs next to lint. No change to the
   published package.
+
+### Fixed
+
+- **`isCellWakingError` did not recognise the error a mid-session pause actually produces.** A
+  statement in flight when the cell pauses fails with postgres-js's `CONNECTION_CLOSED`, not
+  `57P01` - the `57P01` reaches the statement after it. `CONNECTION_CLOSED` is now transient, so
+  `waitForWake` retries it too. Found by reproducing the pause against a real Postgres.
+
+### Changed
+
+- `waitForWake` throws `CellPausedError` instead of a plain `Error` when the cell never answers.
+  It is still an `Error` and the message still starts with "the cell did not become ready after
+  N attempts".
 
 ## [1.7.0] - 2026-09-29
 
