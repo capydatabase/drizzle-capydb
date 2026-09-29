@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-29
+
+I haven't written the 1.7.0 notes, because every user-visible change in that list has already been released:
+
+- **Already released:** only two commits come after the `v1.6.5` tag, `544aa8e` and `723caea`. Everything else in the list is covered by the tags from `v1.6.0` to `v1.6.5` and already has an entry in `CHANGELOG.md`. For example, `c02a48d` (ISO timestamps and the transaction guard errors) went out in 1.6.4, and `aaa9974` (the npm repository link) went out in 1.6.5. Putting them under 1.7.0 would announce them a second time.
+- **The two new commits are internal:** they only bump `@types/node`, `vitest`, `oxlint`, `oxfmt`, the TypeScript nightly and the `packageManager` pin. None of these ship in the package, because `drizzle-orm` and `postgres` are peer dependencies. Your rules say to leave all of this out, so the notes would be empty.
+
+Two other things you may want to check:
+- Nothing user-facing has changed since 1.6.5, which doesn't justify a minor bump to 1.7.0.
+- The `[1.6.5]` changelog entry says `pnpm@11.28.2 (was pnpm@11.28.2)`. That "was" value doesn't match history, because `9454c44` had pinned `pnpm@12.5.1`.
+
 ## [1.6.5] - 2026-09-26
 
 ### Fixed
@@ -116,13 +127,14 @@ All three come from the myroomiev3 migration, where each cost a debugging round.
 - Initial release: `createDb`/`createDirectDb` factories with pooler-safe transaction-mode defaults (`prepare: false` on :6432), `resolveConnectionString`, `isPooledUrl`, and `resolveClientOptions`.
 - `createDirectDb` enforces a direct (non-pooled) connection for migrations.
 
-[Unreleased]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.5...HEAD
-[1.6.5]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.4...v1.6.5
-[1.6.4]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.3...v1.6.4
-[1.6.3]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.1...v1.6.3
-[1.6.1]: https://github.com/capydatabase/drizzle-capydb/compare/v1.6.0...v1.6.1
-[1.6.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.4.0...v1.6.0
-[1.4.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.2.0...v1.4.0
-[1.2.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/capydatabase/drizzle-capydb/releases/tag/v1.0.0
+[Unreleased]: https://github.com/capydatabase/drizzle-capydb/compare/@capydb/drizzle@1.7.0...HEAD
+[1.7.0]: https://github.com/capydatabase/drizzle-capydb/compare/@capydb/drizzle@1.6.5...@capydb/drizzle@1.7.0
+[1.6.5]: https://github.com/capydatabase/drizzle-capydb/compare/@capydb/drizzle@1.6.4...@capydb/drizzle@1.6.5
+[1.6.4]: https://github.com/capydatabase/drizzle-capydb/compare/@capydb/drizzle@1.6.3...@capydb/drizzle@1.6.4
+[1.6.3]: https://github.com/capydatabase/drizzle-capydb/compare/@capydb/drizzle@1.6.1...@capydb/drizzle@1.6.3
+[1.6.1]: https://github.com/capydatabase/drizzle-capydb/compare/@capydb/drizzle@1.6.0...@capydb/drizzle@1.6.1
+[1.6.0]: https://github.com/capydatabase/drizzle-capydb/compare/@capydb/drizzle@1.4.0...@capydb/drizzle@1.6.0
+[1.4.0]: https://github.com/capydatabase/drizzle-capydb/compare/@capydb/drizzle@1.2.0...@capydb/drizzle@1.4.0
+[1.2.0]: https://github.com/capydatabase/drizzle-capydb/compare/@capydb/drizzle@1.1.0...@capydb/drizzle@1.2.0
+[1.1.0]: https://github.com/capydatabase/drizzle-capydb/compare/@capydb/drizzle@1.0.0...@capydb/drizzle@1.1.0
+[1.0.0]: https://github.com/capydatabase/drizzle-capydb/releases/tag/@capydb/drizzle@1.0.0
