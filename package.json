@@ -44,6 +44,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src test",
     "format": "oxfmt --write src test",
+    "format:check": "oxfmt --check src test",
     "test": "vitest run",
     "prepublishOnly": "pnpm typecheck && pnpm build",
     "prepare": "if git rev-parse --git-dir >/dev/null 2>&1; then lefthook install; else echo 'no git repository - skipping lefthook install'; fi"

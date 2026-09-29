@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tests: the `createDb`/`createDirectDb` tests clear the four connection-string variables before
   each case, so an exported `DATABASE_URL` or `CAPYDB_DATABASE_URL` in the developer's shell no
   longer fails them. No change to the published package.
+- CI checks formatting: `pnpm format:check` (`oxfmt --check`) runs next to lint. No change to the
+  published package.
 
 ## [1.7.0] - 2026-09-29
 
