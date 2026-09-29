@@ -332,6 +332,14 @@ pnpm lint        # oxlint
 pnpm test        # vitest
 ```
 
+`test/live.test.ts` runs against a real Postgres and is skipped unless
+`CAPYDB_DRIZZLE_TEST_DATABASE_URL` is set (CI provides one):
+
+```bash
+docker run -d --rm --name drizzle-pg -e POSTGRES_PASSWORD=pw -p 55499:5432 postgres:18
+CAPYDB_DRIZZLE_TEST_DATABASE_URL=postgres://postgres:pw@127.0.0.1:55499/postgres pnpm test
+```
+
 ## License
 
 MIT

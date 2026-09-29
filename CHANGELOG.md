@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tests: the `createDb`/`createDirectDb` tests clear the four connection-string variables before
   each case, so an exported `DATABASE_URL` or `CAPYDB_DATABASE_URL` in the developer's shell no
   longer fails them. No change to the published package.
+- Tests against a real Postgres (`test/live.test.ts`, skipped unless
+  `CAPYDB_DRIZZLE_TEST_DATABASE_URL` is set; CI runs them against a `postgres:18` service). They
+  reproduce a pause with `pg_terminate_backend` and pin the failure sequence `retryOnPause` is
+  built on, and exercise `callFunction` against real functions.
 - CI checks formatting: `pnpm format:check` (`oxfmt --check`) runs next to lint. No change to the
   published package.
 
