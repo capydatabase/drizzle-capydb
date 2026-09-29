@@ -249,6 +249,43 @@ For databases converted with `--mode supabase-compat`, use
 `withSupabaseJwtClaims(db, claims, callback)` - it sets the whole (verified!)
 claims object as `request.jwt.claims` for the `auth.uid()` shim to read.
 
+## Calling Postgres functions
+
+`callFunction` is the drizzle equivalent of `supabase.rpc(name, args)`: it
+calls a function with named arguments and returns the rows it produces.
+
+```ts
+import { callFunction, withAuthContext } from '@capydb/drizzle'
+
+const feed = await withAuthContext(db, { userId }, (tx) =>
+  callFunction<{ id: string; title: string }>(tx, 'get_feed', {
+    p_limit: 20,
+    p_filters: { tags: ['postgres'] }, // jsonb parameter
+  }),
+)
+```
+
+The statement is `select * from get_feed(p_limit => $1, p_filters => $2)`:
+named notation, as PostgREST used, so existing functions keep their parameter
+names and argument order does not matter. Names are quoted as identifiers and
+values are bound parameters.
+
+- `undefined` leaves the argument out, so the parameter's `DEFAULT` applies; a
+  parameter without a default then fails loudly (`function ... does not
+  exist`). Pass `null` for SQL NULL.
+- Plain objects are JSON-encoded for `json`/`jsonb` parameters. Arrays go as
+  Postgres arrays - for a JSON array argument, pass `JSON.stringify(value)`.
+- A table or set-returning function yields its rows; a scalar function yields
+  one row with one column named after the function
+  (`[{ add: 42 }]` for `add(a => 40, b => 2)`).
+- `{ schema: 'api' }` qualifies the name; by default it resolves through the
+  role's `search_path`.
+- The row type is a claim about the function, not checked at runtime - the
+  same contract as `supabase.rpc<T>()`.
+
+Call it with the `tx` handle inside `withAuthContext`: a function called
+through `db` runs outside the RLS context.
+
 ## API
 
 - `createDb<TRelations>(options?)` - pooled-aware application client. Returns
@@ -265,6 +302,8 @@ claims object as `request.jwt.claims` for the `auth.uid()` shim to read.
   `set`). Pooler-safe by construction.
 - `withSupabaseJwtClaims(db, claims, callback)` - same, but sets
   `request.jwt.claims` for databases using the supabase-compat shim.
+- `callFunction<TRow>(db | tx, name, args?, { schema? }?)` - calls a Postgres
+  function with named arguments and returns its rows.
 - `AuthContext` / `AuthContextTransaction<TRelations>` - the context shape and
   the transaction handle type passed to the callbacks.
 - `retryOnPause(operation, options?)` - re-runs idempotent work (a read or a

@@ -817,6 +817,108 @@ export async function withSupabaseJwtClaims<TRelations extends AnyRelations, T>(
 }
 
 /* -------------------------------------------------------------------------
+ * Calling Postgres functions
+ * ---------------------------------------------------------------------- */
+
+/** Where {@link callFunction} runs: a database or a transaction handle. */
+export type FunctionExecutor = Pick<PostgresJsDatabase<AnyRelations>, "execute">;
+
+/** Options for {@link callFunction}. */
+export interface CallFunctionOptions {
+  /**
+   * Schema that holds the function. Default: none - the name resolves through
+   * the role's `search_path`, the same way an unqualified call in SQL does.
+   */
+  schema?: string;
+}
+
+/**
+ * How a JavaScript value travels as a function argument.
+ *
+ * postgres-js sends a plain object as the text `[object Object]`, so objects
+ * are JSON-encoded here and reach a `json`/`jsonb` parameter intact. Arrays are
+ * left alone - postgres-js sends them as Postgres arrays - as are dates, binary
+ * buffers and every scalar.
+ */
+function toFunctionArgument(value: unknown): unknown {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    !(value instanceof Date) &&
+    !ArrayBuffer.isView(value)
+  ) {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
+/**
+ * Call a Postgres function with named arguments and return the rows it
+ * produces - the drizzle equivalent of `supabase.rpc(name, args)`.
+ *
+ * The call is `select * from name(a => $1, b => $2)`: named notation, so
+ * arguments match parameters by name rather than position, exactly as
+ * PostgREST called them, and existing functions keep working unchanged. Every
+ * name is quoted as an identifier and every value is a bound parameter; nothing
+ * is spliced into the SQL text.
+ *
+ * Argument values:
+ * - `undefined` leaves the argument out, so the parameter's `DEFAULT` applies.
+ *   A parameter without a default then fails loudly (`function ... does not
+ *   exist`) instead of silently receiving NULL. Pass `null` for SQL NULL.
+ * - Plain objects are JSON-encoded for `json`/`jsonb` parameters.
+ * - Arrays are sent as Postgres arrays. For a JSON array argument, pass
+ *   `JSON.stringify(value)` yourself.
+ *
+ * Call it with the transaction handle inside {@link withAuthContext}: a
+ * function called through `db` runs outside the RLS context.
+ *
+ * @typeParam TRow - the shape of one returned row. It is a claim about the
+ *   function, not checked at runtime - the same contract as
+ *   `supabase.rpc<T>()`. A set-returning or table function yields its rows; a
+ *   scalar function yields one row with one column named after the function.
+ * @throws Error when `name` or `options.schema` is empty.
+ *
+ * @example
+ * ```ts
+ * const feed = await withAuthContext(db, { userId }, (tx) =>
+ *   callFunction<{ id: string; title: string }>(tx, "get_feed", {
+ *     p_limit: 20,
+ *     p_filters: { tags: ["postgres"] }, // jsonb parameter
+ *   }),
+ * )
+ * ```
+ */
+export async function callFunction<TRow extends Record<string, unknown> = Record<string, unknown>>(
+  db: FunctionExecutor,
+  name: string,
+  args: Record<string, unknown> = {},
+  options: CallFunctionOptions = {},
+): Promise<TRow[]> {
+  if (name === "") {
+    throw new Error("@capydb/drizzle: callFunction needs a function name");
+  }
+  if (options.schema === "") {
+    throw new Error("@capydb/drizzle: callFunction's schema option must not be empty");
+  }
+  const target =
+    options.schema === undefined
+      ? sql.identifier(name)
+      : sql`${sql.identifier(options.schema)}.${sql.identifier(name)}`;
+  // sql.param, not a bare interpolation: drizzle expands an interpolated array
+  // into a parenthesised list of parameters - a row, not the Postgres array
+  // the function expects.
+  const named = Object.entries(args)
+    .filter(([, value]) => value !== undefined)
+    .map(
+      ([parameter, value]) =>
+        sql`${sql.identifier(parameter)} => ${sql.param(toFunctionArgument(value))}`,
+    );
+  return db.execute<TRow>(sql`select * from ${target}(${sql.join(named, sql`, `)})`, "objects");
+}
+
+/* -------------------------------------------------------------------------
  * Timestamps
  *
  * Two separate defects, both found on the myroomiev3 migration and both

@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   any other error is rethrown untouched on the first attempt. Wrap a read or a whole transaction
   - a transaction cut off by the pause was rolled back, so re-running it is safe - never a single
   write outside a transaction.
+- **`callFunction(db | tx, name, args?, { schema? }?)`** - calls a Postgres function with named
+  arguments (`select * from fn(a => $1, b => $2)`) and returns its rows typed as `TRow[]`. Names
+  are quoted identifiers and values are bound parameters. Plain objects are JSON-encoded for
+  `json`/`jsonb` parameters and arrays are sent as Postgres arrays. `undefined` leaves an argument
+  out so its `DEFAULT` applies, where the myroomiev3 helper this replaces sent NULL: a missing
+  argument without a default now fails loudly instead of silently becoming NULL.
 - **`CellPausedError`** - thrown by `retryOnPause` and `waitForWake` when the attempt budget runs
   out, with `attempts` and the last pause error as `cause`.
 
