@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDb, createDirectDb } from "../src/index";
 
 const postgresMock = vi.hoisted(() => vi.fn(() => ({ __mockSql: true })));
@@ -12,6 +12,21 @@ vi.mock("drizzle-orm/postgres-js", () => ({ drizzle: drizzleMock }));
 
 const POOLED_URL = "postgresql://app:secret@proj.db.capydb.dev:6432/appdb?sslmode=require";
 const DIRECT_URL = "postgresql://app:secret@proj.db.capydb.dev:5432/appdb?sslmode=require";
+
+// Every variable createDb/createDirectDb resolve from. Clearing them first keeps
+// a developer's exported DATABASE_URL (or CAPYDB_*) from deciding which one wins.
+const CONNECTION_ENV_VARS = [
+  "CAPYDB_DATABASE_URL",
+  "DATABASE_URL",
+  "CAPYDB_DATABASE_DIRECT_URL",
+  "DATABASE_DIRECT_URL",
+] as const;
+
+beforeEach(() => {
+  for (const name of CONNECTION_ENV_VARS) {
+    vi.stubEnv(name, undefined);
+  }
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();

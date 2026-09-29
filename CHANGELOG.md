@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LICENSE` with the MIT license text (the package was already declared MIT); it now ships in the
   npm tarball.
 
+### Changed
+
+- Tests: the `createDb`/`createDirectDb` tests clear the four connection-string variables before
+  each case, so an exported `DATABASE_URL` or `CAPYDB_DATABASE_URL` in the developer's shell no
+  longer fails them. No change to the published package.
+
 ## [1.7.0] - 2026-09-29
 
 I haven't written the 1.7.0 notes, because every user-visible change in that list has already been released:
