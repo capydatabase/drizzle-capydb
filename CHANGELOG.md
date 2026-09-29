@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-29
+
 ### Added
 
 - **`retryOnPause(operation, options?)`** - re-runs idempotent work when a scale-to-zero pause
@@ -14,31 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replaces it: the statement in flight with `CONNECTION_CLOSED`, then the next one with the
   server's `57P01`. The default budget (3 attempts, 100 ms backoff doubling to 2 s) covers both;
   any other error is rethrown untouched on the first attempt. Wrap a read or a whole transaction
-  - a transaction cut off by the pause was rolled back, so re-running it is safe - never a single
-  write outside a transaction.
+  (one cut off by the pause was rolled back, so re-running it is safe), never a single write
+  outside a transaction.
+- **`CellPausedError`** - thrown by `retryOnPause` and `waitForWake` when the attempt budget runs
+  out, with `attempts` and the last pause error as `cause`.
 - **`callFunction(db | tx, name, args?, { schema? }?)`** - calls a Postgres function with named
   arguments (`select * from fn(a => $1, b => $2)`) and returns its rows typed as `TRow[]`. Names
   are quoted identifiers and values are bound parameters. Plain objects are JSON-encoded for
   `json`/`jsonb` parameters and arrays are sent as Postgres arrays. `undefined` leaves an argument
   out so its `DEFAULT` applies, where the myroomiev3 helper this replaces sent NULL: a missing
   argument without a default now fails loudly instead of silently becoming NULL.
-- **`CellPausedError`** - thrown by `retryOnPause` and `waitForWake` when the attempt budget runs
-  out, with `attempts` and the last pause error as `cause`.
-
 - `LICENSE` with the MIT license text (the package was already declared MIT); it now ships in the
   npm tarball.
-
-### Changed
-
-- Tests: the `createDb`/`createDirectDb` tests clear the four connection-string variables before
-  each case, so an exported `DATABASE_URL` or `CAPYDB_DATABASE_URL` in the developer's shell no
-  longer fails them. No change to the published package.
-- Tests against a real Postgres (`test/live.test.ts`, skipped unless
-  `CAPYDB_DRIZZLE_TEST_DATABASE_URL` is set; CI runs them against a `postgres:18` service). They
-  reproduce a pause with `pg_terminate_backend` and pin the failure sequence `retryOnPause` is
-  built on, and exercise `callFunction` against real functions.
-- CI checks formatting: `pnpm format:check` (`oxfmt --check`) runs next to lint. No change to the
-  published package.
 
 ### Fixed
 
@@ -50,19 +39,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `waitForWake` throws `CellPausedError` instead of a plain `Error` when the cell never answers.
-  It is still an `Error` and the message still starts with "the cell did not become ready after
-  N attempts".
+  It is still an `Error`, and the message still says "the cell did not become ready after N
+  attempts".
+- Tests against a real Postgres (`test/live.test.ts`, skipped unless
+  `CAPYDB_DRIZZLE_TEST_DATABASE_URL` is set; CI runs them against a `postgres:18` service). They
+  reproduce a pause with `pg_terminate_backend`, pin the failure sequence `retryOnPause` is built
+  on, and exercise `callFunction` against real functions.
+- Tests: the `createDb`/`createDirectDb` tests clear the four connection-string variables before
+  each case, so an exported `DATABASE_URL` or `CAPYDB_DATABASE_URL` in the developer's shell no
+  longer fails them. No change to the published package.
+- CI checks formatting: `pnpm format:check` (`oxfmt --check`) runs next to lint. No change to the
+  published package.
 
 ## [1.7.0] - 2026-09-29
 
-I haven't written the 1.7.0 notes, because every user-visible change in that list has already been released:
+Tagged `@capydb/drizzle@1.7.0`; every other release uses the `vX.Y.Z` form.
 
-- **Already released:** only two commits come after the `v1.6.5` tag, `544aa8e` and `723caea`. Everything else in the list is covered by the tags from `v1.6.0` to `v1.6.5` and already has an entry in `CHANGELOG.md`. For example, `c02a48d` (ISO timestamps and the transaction guard errors) went out in 1.6.4, and `aaa9974` (the npm repository link) went out in 1.6.5. Putting them under 1.7.0 would announce them a second time.
-- **The two new commits are internal:** they only bump `@types/node`, `vitest`, `oxlint`, `oxfmt`, the TypeScript nightly and the `packageManager` pin. None of these ship in the package, because `drizzle-orm` and `postgres` are peer dependencies. Your rules say to leave all of this out, so the notes would be empty.
+### Changed
 
-Two other things you may want to check:
-- Nothing user-facing has changed since 1.6.5, which doesn't justify a minor bump to 1.7.0.
-- The `[1.6.5]` changelog entry says `pnpm@11.28.2 (was pnpm@11.28.2)`. That "was" value doesn't match history, because `9454c44` had pinned `pnpm@12.5.1`.
+- No change to the published package: development tooling only (`oxlint` 1.86, `oxfmt` 0.71,
+  `vitest` 5.0.2, `@types/node` 26.6.3, the TypeScript nightly), and `packageManager` pinned to
+  `pnpm@11.28.2` (was `pnpm@12.5.1`).
 
 ## [1.6.5] - 2026-09-26
 
