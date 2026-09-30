@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dev tooling: vitest 5.0.3 (was 5.0.2), lefthook 2.1.15 (was 2.1.14) and `typescript@next`
+  7.1.0-dev.20260930.4 (was 7.1.0-dev.20260929.1). No runtime change.
+
 ## [1.8.0] - 2026-09-29
 
 ### Added
