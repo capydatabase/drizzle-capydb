@@ -49,6 +49,10 @@ const POOLER_TRACKED_STARTUP_PARAMS: ReadonlySet<string> = new Set([
   "timezone",
   "standard_conforming_strings",
   "application_name",
+  // Tracked since PgBouncer 1.26 (CapyDB poolers, 2026-09-30): the startup
+  // value is applied to each borrowed server connection and does not carry
+  // over to the next client. 1.25 rejected it at handshake (08P01).
+  "search_path",
 ]);
 
 /**
@@ -242,17 +246,17 @@ export function resolveClientOptions(
  * on each new connection. Behind transaction-mode PgBouncer three things can
  * happen, and two of them deserve to be loud:
  *
- * - Tracked params (`application_name`, `client_encoding`, ...) are replayed
- *   per client - fine, silently allowed.
+ * - Tracked params (`application_name`, `client_encoding`, `search_path`, ...)
+ *   are replayed per client - fine, silently allowed.
  * - Ignored params (`statement_timeout` and friends) connect successfully but
  *   are NEVER APPLIED - a `console.warn` names each one and the durable fix
  *   (`ALTER ROLE ... SET`), because a timeout you believe is set and isn't is
  *   a production incident waiting for a slow query.
- * - Anything else (e.g. `search_path`) is rejected by the pooler at handshake
- *   with `unsupported startup parameter` (08P01), taking every connection
- *   down with it - this throws at client construction instead, with the same
- *   remediation, so a misconfigured deploy dies loudly at startup rather than
- *   at first query.
+ * - Anything else (e.g. `default_transaction_read_only`) is rejected by the
+ *   pooler at handshake with `unsupported startup parameter` (08P01), taking
+ *   every connection down with it - this throws at client construction
+ *   instead, with the same remediation, so a misconfigured deploy dies loudly
+ *   at startup rather than at first query.
  *
  * @param connection - the `connection` object passed in `options.client`.
  * @throws Error naming every parameter the pooler would reject at handshake.

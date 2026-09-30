@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-09-30
+
 ### Changed
 
+- **`search_path` is allowed in `connection` options on the pooled endpoint.** CapyDB's poolers
+  run PgBouncer 1.26, which tracks `search_path` and applies the value a client sends at startup
+  to each server connection it borrows (verified on Postgres 17 and 18 cells, with no carry-over
+  to the next client). `assertPooledStartupParameters` - and so `createDb` against a `:6432` URL -
+  no longer throws for it. Other unsupported parameters (e.g. `default_transaction_read_only`)
+  still throw, and the timeout family still warns that it is not applied.
 - Dev tooling: vitest 5.0.3 (was 5.0.2), lefthook 2.1.15 (was 2.1.14) and `typescript@next`
   7.1.0-dev.20260930.4 (was 7.1.0-dev.20260929.1). No runtime change.
 
