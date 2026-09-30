@@ -130,24 +130,34 @@ describe("pooled startup parameter guard", () => {
     expect(warn.mock.calls[0]?.[0]).toContain("ALTER ROLE");
   });
 
-  it("throws for params the pooler rejects at handshake (search_path)", () => {
+  it("passes search_path through silently (tracked since PgBouncer 1.26)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(() =>
       resolveClientOptions(POOLED_URL, undefined, {
         connection: { search_path: "tenant_42" },
       }),
-    ).toThrow(/search_path.*unsupported startup parameter/s);
+    ).not.toThrow();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("throws for params the pooler rejects at handshake (default_transaction_read_only)", () => {
+    expect(() =>
+      resolveClientOptions(POOLED_URL, undefined, {
+        connection: { default_transaction_read_only: true },
+      }),
+    ).toThrow(/default_transaction_read_only.*unsupported startup parameter/s);
   });
 
   it("skips undefined/null values and does not guard direct clients", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(() =>
       resolveClientOptions(POOLED_URL, undefined, {
-        connection: { search_path: undefined },
+        connection: { default_transaction_read_only: undefined },
       }),
     ).not.toThrow();
     expect(() =>
       resolveClientOptions(DIRECT_URL, undefined, {
-        connection: { search_path: "tenant_42", statement_timeout: 10_000 },
+        connection: { default_transaction_read_only: true, statement_timeout: 10_000 },
       }),
     ).not.toThrow();
     expect(warn).not.toHaveBeenCalled();
@@ -155,7 +165,7 @@ describe("pooled startup parameter guard", () => {
 
   it("is exported for direct use and reports every offending param", () => {
     expect(() =>
-      assertPooledStartupParameters({ search_path: "a", default_transaction_read_only: "on" }),
-    ).toThrow(/search_path, default_transaction_read_only/);
+      assertPooledStartupParameters({ work_mem: "64MB", default_transaction_read_only: "on" }),
+    ).toThrow(/work_mem, default_transaction_read_only/);
   });
 });
