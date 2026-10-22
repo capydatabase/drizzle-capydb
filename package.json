@@ -54,21 +54,21 @@
     "postgres": ">=3.4.9"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.2.3",
-    "@commitlint/config-conventional": "^21.2.3",
-    "@types/node": "^26.6.3",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@types/node": "^26.6.5",
     "drizzle-orm": "rc5",
-    "lefthook": "^2.1.15",
-    "oxfmt": "^0.71.0",
-    "oxlint": "^1.86.0",
+    "lefthook": "^2.2.2",
+    "oxfmt": "^0.74.0",
+    "oxlint": "^1.89.0",
     "postgres": "^3.4.9",
-    "tsdown": "0.23.0",
+    "tsdown": "0.23.1",
     "typescript": "next",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   },
-  "packageManager": "pnpm@11.28.2",
+  "packageManager": "pnpm@11.28.7",
   "engines": {
-    "node": ">=24.21.0"
+    "node": ">=24.22.1"
   },
   "publishConfig": {
     "access": "public"
