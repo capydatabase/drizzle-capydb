@@ -51,7 +51,7 @@
   },
   "peerDependencies": {
     "drizzle-orm": ">=1.0.0-rc.5 <2",
-    "postgres": ">=3.4.9"
+    "postgres": ">=4"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.4",

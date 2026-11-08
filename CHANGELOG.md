@@ -11,6 +11,10 @@ _Nothing yet._
 
 ## [1.10.0] - 2026-11-08
 
+### Changed
+
+- Peer dependency `postgres` now requires `>=4` (was `>=3.4.9`); postgres.js 3 is no longer tested.
+
 ### Added
 
 - `describeQueryError(error)` reads a failed query through drizzle's `DrizzleQueryError`
