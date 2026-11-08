@@ -249,6 +249,56 @@ For databases converted with `--mode supabase-compat`, use
 `withSupabaseJwtClaims(db, claims, callback)` - it sets the whole (verified!)
 claims object as `request.jwt.claims` for the `auth.uid()` shim to read.
 
+## Bulk ingest and error handling
+
+Scripts that load or rewrite a lot of data run on the direct endpoint with a
+small, named, bounded pool, and retry only what a retry can fix:
+
+```ts
+import { batchClientOptions, createDirectDb, formatQueryError, isTransientQueryError } from '@capydb/drizzle'
+
+const db = createDirectDb({
+  client: batchClientOptions({ applicationName: 'ingest', statementTimeoutMs: 300_000 }),
+})
+
+for (let attempt = 1; ; attempt++) {
+  try {
+    await runStep(db)
+    break
+  } catch (error) {
+    // Connection drops, a pausing/resuming cell, serialization and deadlock
+    // rollbacks and "too many connections" are worth another go.
+    if (isTransientQueryError(error) && attempt < 5) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000 * attempt))
+      continue
+    }
+    // Everything else fails the same way next time - say why and stop.
+    console.error(formatQueryError(error))
+    // 22008 data_exception: date/time field value out of range: "1992-10-00"
+    //   (parameter $2256 = '1992-10-00'; not retryable) — query: update "games" g set …
+    throw error
+  }
+}
+
+await db.$client.end()
+```
+
+The rule: **retry only connection-class errors; data (22), constraint (23) and
+syntax (42) errors fail the same way on every attempt - fix the input, do not
+retry.** Drizzle's `DrizzleQueryError` says `Failed query: <sql>` and keeps the
+real reason on `.cause`; `describeQueryError(error)` returns it structured
+(`sqlstate`, `class`, `retryable`, `message`, `detail`, `hint`, `where`, the
+first 200 characters of the SQL, and the parameter Postgres named, resolved to
+its value) and `formatQueryError(error)` prints it on one line.
+
+Why the pool is small: the driver's default of 10 connections is sized for an
+application server. Three ingest processes side by side each opened 10 and used
+41 of a 60-connection plan; `batchClientOptions` keeps three (override with
+`max`), names the sessions so the dashboard can tell them from the app's, and
+bounds one runaway statement with `statement_timeout` when you ask for it.
+Long UPDATEs still belong in chunks (an 813-second one opened a
+`long_transaction` alert) - the timeout is a backstop, not a strategy.
+
 ## Calling Postgres functions
 
 `callFunction` is the drizzle equivalent of `supabase.rpc(name, args)`: it
@@ -312,6 +362,19 @@ through `db` runs outside the RLS context.
 - `waitForWake(client, options?)` - bounded warm-up for cron, CI and
   migrations; throws `CellPausedError` if the cell never answers.
 - `isCellWakingError(error)` - whether an error is a pause/resume condition.
+- `isTransientQueryError(error)` - whether an error is worth retrying unchanged:
+  pause/resume, any connection error (SQLSTATE class 08), serialization and
+  deadlock rollbacks, too many connections. Data, constraint and syntax errors
+  are not.
+- `describeQueryError(error)` - `QueryErrorDescription | undefined`: the
+  SQLSTATE, its class name, `retryable`, the message with DETAIL/HINT/CONTEXT,
+  the SQL drizzle ran (first 200 characters) and the offending parameter,
+  read through `DrizzleQueryError.cause`.
+- `formatQueryError(error)` - the same on one line, for catch blocks.
+- `batchClientOptions({ applicationName, statementTimeoutMs?, max? })` -
+  postgres-js options for a bulk/ingest session on the direct endpoint
+  (`max` 3, `idle_timeout` 60, `application_name`, optional
+  `statement_timeout`); pass as `client` to `createDirectDb`.
 - `CellPausedError` - the typed error both helpers throw; `attempts` and the
   last pause error as `cause`.
 - `resolveConnectionString(explicit, envVarNames, env?)`,

@@ -460,6 +460,310 @@ export function isCellWakingError(error: unknown): boolean {
   return cause !== undefined && cause !== error ? isCellWakingError(cause) : false;
 }
 
+/**
+ * SQLSTATE codes that mean "try again later" beyond the pause/resume set in
+ * {@link isCellWakingError}: the transaction lost a serialization or deadlock
+ * race, or the cell is at its connection limit. KEEP IN LOCKSTEP with
+ * sqlstateRetryable in backend/internal/service/logs_errors.go, which is the
+ * server-side half of the same rule (the `retryable` flag of the recent-errors
+ * endpoint).
+ */
+const TRANSIENT_SQLSTATES: ReadonlySet<string> = new Set([
+  "40001", // serialization_failure
+  "40P01", // deadlock_detected
+  "53300", // too_many_connections
+  "57P01", // admin_shutdown (the cell was paused mid-session)
+  "57P02", // crash_shutdown
+  "57P03", // cannot_connect_now (still resuming)
+]);
+
+/**
+ * Report whether an error is transient by its SQLSTATE class - worth retrying
+ * unchanged - as opposed to a failure that repeats on every attempt.
+ *
+ * True for every pause/resume condition ({@link isCellWakingError}), every
+ * connection_exception (class 08), serialization and deadlock rollbacks
+ * (40001, 40P01), too_many_connections (53300) and the cell pausing or
+ * resuming under the session (57P01, 57P02, 57P03). False for everything
+ * else, deliberately including data errors (22), constraint violations (23),
+ * syntax and privilege errors (42) and a cancelled statement (57014): those
+ * fail the same way on every attempt, and retrying them only repeats the cost
+ * - the 2026-11-08 ludography ingest re-ran a 70-second step five times over
+ * one bad date in a 2,256-parameter batch.
+ *
+ * @example
+ * ```ts
+ * for (let attempt = 1; ; attempt++) {
+ *   try { await runStep(); break }
+ *   catch (error) {
+ *     if (!isTransientQueryError(error) || attempt === 5) throw error
+ *     await new Promise((r) => setTimeout(r, 1000 * attempt))
+ *   }
+ * }
+ * ```
+ */
+export function isTransientQueryError(error: unknown): boolean {
+  if (isCellWakingError(error)) return true;
+  const code = sqlState(error);
+  if (code === undefined) return false;
+  return code.startsWith("08") || TRANSIENT_SQLSTATES.has(code);
+}
+
+/** SQLSTATE class names (PostgreSQL Appendix A) by two-character class code. */
+const SQLSTATE_CLASSES: Readonly<Record<string, string>> = {
+  "00": "successful_completion",
+  "01": "warning",
+  "02": "no_data",
+  "03": "sql_statement_not_yet_complete",
+  "08": "connection_exception",
+  "09": "triggered_action_exception",
+  "0A": "feature_not_supported",
+  "0B": "invalid_transaction_initiation",
+  "0F": "locator_exception",
+  "0L": "invalid_grantor",
+  "0P": "invalid_role_specification",
+  "0Z": "diagnostics_exception",
+  "20": "case_not_found",
+  "21": "cardinality_violation",
+  "22": "data_exception",
+  "23": "integrity_constraint_violation",
+  "24": "invalid_cursor_state",
+  "25": "invalid_transaction_state",
+  "26": "invalid_sql_statement_name",
+  "27": "triggered_data_change_violation",
+  "28": "invalid_authorization_specification",
+  "2B": "dependent_privilege_descriptors_still_exist",
+  "2D": "invalid_transaction_termination",
+  "2F": "sql_routine_exception",
+  "34": "invalid_cursor_name",
+  "38": "external_routine_exception",
+  "39": "external_routine_invocation_exception",
+  "3B": "savepoint_exception",
+  "3D": "invalid_catalog_name",
+  "3F": "invalid_schema_name",
+  "40": "transaction_rollback",
+  "42": "syntax_error_or_access_rule_violation",
+  "44": "with_check_option_violation",
+  "53": "insufficient_resources",
+  "54": "program_limit_exceeded",
+  "55": "object_not_in_prerequisite_state",
+  "57": "operator_intervention",
+  "58": "system_error",
+  "72": "snapshot_too_old",
+  F0: "config_file_error",
+  HV: "fdw_error",
+  P0: "plpgsql_error",
+  XX: "internal_error",
+};
+
+/** What {@link describeQueryError} extracts from a failed query. */
+export interface QueryErrorDescription {
+  /** Five-character SQLSTATE, when the server sent one. */
+  sqlstate?: string;
+  /** The SQLSTATE class name (`data_exception`, `integrity_constraint_violation`, ...). */
+  class?: string;
+  /** Whether the condition is transient by its class (see {@link isTransientQueryError}). */
+  retryable: boolean;
+  /** The server's (or driver's) primary message. */
+  message: string;
+  /** Postgres DETAIL, HINT and CONTEXT (`where`) lines, when sent. */
+  detail?: string;
+  hint?: string;
+  where?: string;
+  /** The first 200 characters of the SQL drizzle ran (from `DrizzleQueryError.query`). */
+  query?: string;
+  /**
+   * The parameter Postgres named in its CONTEXT (`unnamed portal parameter $2256 = '...'`),
+   * resolved against the query's parameter list - the value that actually failed.
+   */
+  parameter?: { index: number; value: unknown };
+}
+
+const QUERY_PREVIEW_LENGTH = 200;
+const PARAMETER_CONTEXT_PATTERN = /\bparameter \$(\d+)/;
+
+/**
+ * Describe a failed query: the SQLSTATE, its class, whether it is worth
+ * retrying, the server's message with DETAIL/HINT/CONTEXT, the SQL drizzle
+ * ran, and the offending parameter when Postgres named one.
+ *
+ * Drizzle wraps every driver failure in a `DrizzleQueryError` whose own
+ * message is `Failed query: <sql>` with the real reason only on `.cause`; a
+ * script that prints `error.message` logs the SQL and loses the SQLSTATE.
+ * This walks the `cause` chain and reads the driver's fields (postgres-js
+ * `PostgresError` and `pg`'s `DatabaseError` both carry `code`, `detail`,
+ * `hint` and `where`). Returns undefined for values that carry neither a
+ * message nor a code.
+ */
+export function describeQueryError(error: unknown): QueryErrorDescription | undefined {
+  let query: string | undefined;
+  let params: unknown[] | undefined;
+  let driver: Record<string, unknown> | undefined;
+  let fallbackMessage: string | undefined;
+  for (
+    let current: unknown = error, depth = 0;
+    current && typeof current === "object" && depth < 5;
+    depth++
+  ) {
+    const record = current as Record<string, unknown>;
+    if (query === undefined && typeof record.query === "string") {
+      query = record.query;
+      if (Array.isArray(record.params)) params = record.params;
+    }
+    if (driver === undefined && typeof record.code === "string") {
+      driver = record;
+    }
+    if (
+      fallbackMessage === undefined &&
+      typeof record.message === "string" &&
+      record.message !== ""
+    ) {
+      fallbackMessage = record.message;
+    }
+    const cause = record.cause;
+    if (cause === undefined || cause === current) break;
+    current = cause;
+  }
+  if (driver === undefined && fallbackMessage === undefined) return undefined;
+
+  const description: QueryErrorDescription = {
+    retryable: isTransientQueryError(error),
+    message: stringField(driver?.message) ?? fallbackMessage ?? "",
+  };
+  const code = stringField(driver?.code);
+  if (code !== undefined && /^[0-9A-Z]{5}$/.test(code)) {
+    description.sqlstate = code;
+    const className = SQLSTATE_CLASSES[code.slice(0, 2)];
+    if (className !== undefined) description.class = className;
+  }
+  const detail = stringField(driver?.detail);
+  if (detail !== undefined) description.detail = detail;
+  const hint = stringField(driver?.hint);
+  if (hint !== undefined) description.hint = hint;
+  const where = stringField(driver?.where);
+  if (where !== undefined) description.where = where;
+  if (query !== undefined) {
+    const collapsed = query.replace(/\s+/g, " ").trim();
+    description.query =
+      collapsed.length > QUERY_PREVIEW_LENGTH
+        ? `${collapsed.slice(0, QUERY_PREVIEW_LENGTH)}…`
+        : collapsed;
+  }
+  const match = where === undefined ? null : PARAMETER_CONTEXT_PATTERN.exec(where);
+  if (match?.[1] !== undefined) {
+    const index = Number(match[1]);
+    if (params !== undefined && index >= 1 && index <= params.length) {
+      description.parameter = { index, value: params[index - 1] };
+    }
+  }
+  return description;
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/**
+ * One line a script's catch block can print instead of `error.message`:
+ *
+ * `22008 data_exception: date/time field value out of range: "1992-10-00"
+ * (parameter $2256 = '1992-10-00'; not retryable) — query: update "games" g set …`
+ *
+ * Falls back to the error's own message (or `String(error)`) for values
+ * {@link describeQueryError} cannot read.
+ */
+export function formatQueryError(error: unknown): string {
+  const described = describeQueryError(error);
+  if (described === undefined) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  const head =
+    described.sqlstate === undefined
+      ? described.message
+      : `${described.sqlstate}${described.class === undefined ? "" : ` ${described.class}`}: ${described.message}`;
+  const notes: string[] = [];
+  if (described.parameter !== undefined) {
+    notes.push(
+      `parameter $${described.parameter.index} = ${formatParameterValue(described.parameter.value)}`,
+    );
+  }
+  if (described.detail !== undefined) notes.push(`detail: ${described.detail}`);
+  notes.push(described.retryable ? "retryable" : "not retryable");
+  const query = described.query === undefined ? "" : ` — query: ${described.query}`;
+  return `${head} (${notes.join("; ")})${query}`;
+}
+
+function formatParameterValue(value: unknown): string {
+  if (typeof value === "string") return `'${value}'`;
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/** Options for {@link batchClientOptions}. */
+export interface BatchClientOptions {
+  /**
+   * `application_name` for every connection the client opens - what the
+   * dashboard's activity view and `pg_stat_activity` show, so an ingest's
+   * sessions can be told from the app's.
+   */
+  applicationName: string;
+  /**
+   * `statement_timeout` sent as a startup parameter, in milliseconds. Bounds
+   * one runaway statement (an 813-second UPDATE opened a `long_transaction`
+   * alert during the 2026-11-08 ludography ingest). Omit for no limit.
+   */
+  statementTimeoutMs?: number;
+  /** Pool size; default 3 (see {@link batchClientOptions}). */
+  max?: number;
+}
+
+/**
+ * postgres-js options for a long bulk/ingest session on the DIRECT endpoint,
+ * to merge in as `createDirectDb({ client: batchClientOptions({...}) })`.
+ *
+ * Why these defaults: the driver's own pool of 10 is sized for an application
+ * server, not a script - three ingest processes running side by side each
+ * opened 10 and reached 41 of a 60-connection plan while the app's pooler
+ * still needed its share. A script runs a handful of statements at a time;
+ * `max: 3` keeps the budget. `idle_timeout` 60 returns connections between
+ * steps. `application_name` makes the sessions identifiable, and
+ * `statement_timeout` (when given) bounds a single statement. Both travel as
+ * startup parameters: the direct endpoint applies them; the pooled endpoint
+ * would track `application_name` but silently ignore `statement_timeout`
+ * (see {@link assertPooledStartupParameters}), which is one more reason bulk
+ * work belongs on the direct URL.
+ *
+ * @example
+ * ```ts
+ * const db = createDirectDb({
+ *   client: batchClientOptions({ applicationName: 'ingest', statementTimeoutMs: 300_000 }),
+ * })
+ * ```
+ */
+export function batchClientOptions(options: BatchClientOptions): ClientOptions {
+  const connection: Record<string, string> = { application_name: options.applicationName };
+  if (options.statementTimeoutMs !== undefined) {
+    if (!Number.isInteger(options.statementTimeoutMs) || options.statementTimeoutMs <= 0) {
+      throw new Error(
+        "@capydb/drizzle: statementTimeoutMs must be a positive integer number of milliseconds",
+      );
+    }
+    connection.statement_timeout = String(options.statementTimeoutMs);
+  }
+  return { max: options.max ?? 3, idle_timeout: 60, connection };
+}
+
 /** Backoff settings shared by {@link waitForWake} and {@link retryOnPause}. */
 export interface PauseRetryOptions {
   /** Maximum attempts, the first one included. */

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [1.10.0] - 2026-11-08
+
+### Added
+
+- `describeQueryError(error)` reads a failed query through drizzle's `DrizzleQueryError`
+  (`Failed query: <sql>` with the reason only on `.cause`) and the driver error underneath it:
+  the SQLSTATE, its class name (PostgreSQL Appendix A), whether it is retryable, the message
+  with DETAIL/HINT/CONTEXT, the first 200 characters of the SQL, and the parameter Postgres
+  named in its CONTEXT resolved to its value. On 2026-11-08 an ingest retried a deterministic
+  `22008` (one day-00 date in a 2,256-parameter batch) five times because its own log showed only
+  the SQL.
+- `formatQueryError(error)` prints that on one line for catch blocks.
+- `isTransientQueryError(error)`: true for pause/resume conditions (`isCellWakingError`), every
+  connection error (class 08), `40001`, `40P01`, `53300`, `57P01`, `57P02` and `57P03`; false for
+  data (22), constraint (23) and syntax (42) errors and a cancelled statement (57014). Kept in
+  lockstep with the control plane's `retryable` verdict on the recent-errors endpoint.
+- `batchClientOptions({ applicationName, statementTimeoutMs?, max? })`: postgres-js options for a
+  long bulk/ingest session on the direct endpoint - `max` 3, `idle_timeout` 60, `application_name`
+  and an optional `statement_timeout` startup parameter. Three ingest processes with the driver's
+  default pool of 10 had reached 41 of a 60-connection plan.
+- README section "Bulk ingest and error handling".
+
 ### Changed
 
 - Dev tooling: oxlint 1.92.0, oxfmt 0.77.0, tsdown 0.23.7, vitest 5.1.0, lefthook 2.2.2,
