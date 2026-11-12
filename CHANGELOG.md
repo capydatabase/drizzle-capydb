@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `retryOnPause` docs (JSDoc and README) name the commit-in-doubt case: a transaction whose
+  connection dies after the server committed but before the reply arrived is re-run in full, so a
+  writing transaction is only safe to wrap when running it twice equals running it once. The docs
+  said re-running a cut-off transaction was always safe.
 - The scale-to-zero docs describe postgres.js 4: a pause fails one statement with `57P01` and the
   next one reconnects (postgres.js 3 failed two, `CONNECTION_CLOSED` then `57P01`). The live tests
   assert that sequence; `retryOnPause` keeps its 3-attempt default. CI had been red since the

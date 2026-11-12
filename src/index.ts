@@ -890,14 +890,24 @@ export async function waitForWake(client: Sql, options: WaitForWakeOptions = {})
  * Only wrap work that is safe to run twice. Two shapes are:
  *
  * - **A read.** Re-running a `select` cannot change anything.
- * - **A whole transaction.** A transaction cut off by the pause was rolled back
- *   by the server, so running the entire callback again is the correct retry.
+ * - **A whole transaction.** A transaction cut off by the pause before its
+ *   `COMMIT` was rolled back by the server, so running the entire callback
+ *   again is the correct retry - but see the `COMMIT` caveat below.
  *   Wrap the `db.transaction(...)` (or {@link withAuthContext}) call, never a
  *   statement inside it - the transaction's connection is gone, so a retry
  *   inside the callback can only fail again.
  *
  * Do not wrap a single write outside a transaction: if the connection closed
  * after the server committed, the retry applies it a second time.
+ *
+ * The same holds for a transaction cut off at its `COMMIT`: when the connection
+ * dies after the server committed but before the client read the reply, the
+ * error looks exactly like a pause before the commit, and the retry runs the
+ * whole transaction again. A transaction that writes is only safe to wrap when
+ * running it twice has the effect of running it once - an upsert, an insert
+ * keyed by a client-chosen id with `on conflict do nothing`, an update to an
+ * absolute value. Otherwise check for the first attempt's effect before
+ * retrying, or let the error reach the caller.
  *
  * @throws CellPausedError when every attempt failed with a pause/resume
  *   error; the last one is its `cause`.

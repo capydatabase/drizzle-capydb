@@ -165,7 +165,8 @@ first one after the pause.
 
 `retryOnPause` absorbs pause and resume failures and rethrows everything else
 untouched. Wrap work that is safe to run twice - a read, or a whole
-transaction (one cut off by the pause was rolled back by the server):
+transaction (one cut off by the pause before its `COMMIT` was rolled back by
+the server):
 
 ```ts
 import { retryOnPause, withAuthContext } from '@capydb/drizzle'
@@ -182,6 +183,14 @@ transaction's connection is gone, so an inner retry can only fail again. Do
 not wrap a single write outside a transaction: if the connection closed after
 the server committed, the retry would apply it twice. Nothing in this package
 retries implicitly, because only you know which work is idempotent.
+
+The same is true of a transaction cut off at its `COMMIT` (commit in doubt):
+if the connection dies after the server committed but before the client read
+the reply, the error is indistinguishable from a pause before the commit, and
+the retry runs the whole transaction again. Wrap a writing transaction only
+when running it twice has the effect of running it once - an upsert, an insert
+keyed by a client-chosen id with `on conflict do nothing`, an update to an
+absolute value - or check for the first attempt's effect before retrying.
 
 The default budget is 3 attempts (100 ms backoff, doubling, at most 2 s): the
 failed statement, the reconnect, and one spare for a cell that is still
