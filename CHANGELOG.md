@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dev tooling: drizzle-orm 1.0.0-rc.5 (the tagged rc.5 release instead of the `rc5` branch build), postgres 4.1.1, oxlint 1.93, oxfmt 0.78, pnpm 12.20.0. No runtime change.
+
 ## [1.11.0] - 2026-11-08
 
 _Nothing yet._
