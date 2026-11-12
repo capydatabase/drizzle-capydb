@@ -72,18 +72,22 @@ describe("callFunction", () => {
     expect(params).toEqual(["capy", null]);
   });
 
-  it("JSON-encodes plain objects and passes arrays, dates and buffers through", async () => {
+  it("passes every value through untouched for postgres-js to serialize by parameter type", async () => {
+    // postgres-js 4 learns each parameter's type from the server and JSON-encodes
+    // json/jsonb values itself; encoding an object here too would store a JSON
+    // string instead of the object (the 1.11.0 defect).
     const fake = fakeExecutor();
     const when = new Date("2026-09-29T10:00:00Z");
     const bytes = new Uint8Array([1, 2, 3]);
+    const doc = { tags: ["a"], nested: { n: 1 } };
     await callFunction(fake.db, "save", {
-      p_doc: { tags: ["a"], nested: { n: 1 } },
+      p_doc: doc,
       p_ids: [1, 2, 3],
       p_at: when,
       p_blob: bytes,
     });
     const { params } = fake.render();
-    expect(params).toEqual(['{"tags":["a"],"nested":{"n":1}}', [1, 2, 3], when, bytes]);
+    expect(params).toEqual([doc, [1, 2, 3], when, bytes]);
   });
 
   it("rejects an empty function or schema name before touching the database", async () => {

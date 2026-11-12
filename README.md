@@ -323,8 +323,11 @@ values are bound parameters.
 - `undefined` leaves the argument out, so the parameter's `DEFAULT` applies; a
   parameter without a default then fails loudly (`function ... does not
   exist`). Pass `null` for SQL NULL.
-- Plain objects are JSON-encoded for `json`/`jsonb` parameters. Arrays go as
-  Postgres arrays - for a JSON array argument, pass `JSON.stringify(value)`.
+- Values go to postgres-js unchanged, which serializes each one by its
+  parameter's type: objects and arrays become JSON for `json`/`jsonb`
+  parameters, arrays become Postgres arrays for array parameters. Pass the
+  value itself, never `JSON.stringify(value)` - a string sent to a `jsonb`
+  parameter arrives as a JSON string, not as the document it spells.
 - A table or set-returning function yields its rows; a scalar function yields
   one row with one column named after the function
   (`[{ add: 42 }]` for `add(a => 40, b => 2)`).

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `callFunction` hands `json`/`jsonb` parameters the object or array itself. It JSON-encoded plain
+  objects first, which postgres.js 3 needed; postgres.js 4 (the peer since 1.10.0) learns each
+  parameter's type from the server and encodes json/jsonb values itself, so the function received
+  a JSON *string* (`jsonb_typeof` = `string`) and a jsonb output column echoing it came back as a
+  string. Values now go to postgres.js unchanged; JSON arrays can be passed directly too. Pass
+  values, not `JSON.stringify(value)`: a string sent to a jsonb parameter is a JSON string.
+
 ### Changed
 
 - Dev tooling: drizzle-orm 1.0.0-rc.5 (the tagged rc.5 release instead of the `rc5` branch build), postgres 4.1.1, oxlint 1.93, oxfmt 0.78, pnpm 12.20.0. No runtime change.

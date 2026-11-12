@@ -1141,27 +1141,6 @@ export interface CallFunctionOptions {
 }
 
 /**
- * How a JavaScript value travels as a function argument.
- *
- * postgres-js sends a plain object as the text `[object Object]`, so objects
- * are JSON-encoded here and reach a `json`/`jsonb` parameter intact. Arrays are
- * left alone - postgres-js sends them as Postgres arrays - as are dates, binary
- * buffers and every scalar.
- */
-function toFunctionArgument(value: unknown): unknown {
-  if (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    !(value instanceof Date) &&
-    !ArrayBuffer.isView(value)
-  ) {
-    return JSON.stringify(value);
-  }
-  return value;
-}
-
-/**
  * Call a Postgres function with named arguments and return the rows it
  * produces - the drizzle equivalent of `supabase.rpc(name, args)`.
  *
@@ -1175,9 +1154,11 @@ function toFunctionArgument(value: unknown): unknown {
  * - `undefined` leaves the argument out, so the parameter's `DEFAULT` applies.
  *   A parameter without a default then fails loudly (`function ... does not
  *   exist`) instead of silently receiving NULL. Pass `null` for SQL NULL.
- * - Plain objects are JSON-encoded for `json`/`jsonb` parameters.
- * - Arrays are sent as Postgres arrays. For a JSON array argument, pass
- *   `JSON.stringify(value)` yourself.
+ * - Every other value is handed to postgres-js unchanged, which serializes it
+ *   by the parameter's type: objects and arrays become JSON for `json`/`jsonb`
+ *   parameters, arrays become Postgres arrays for array parameters. Pass the
+ *   value itself, never `JSON.stringify(value)` - a string sent to a `jsonb`
+ *   parameter arrives as a JSON string, not as the document it spells.
  *
  * Call it with the transaction handle inside {@link withAuthContext}: a
  * function called through `db` runs outside the RLS context.
@@ -1216,13 +1197,12 @@ export async function callFunction<TRow extends Record<string, unknown> = Record
       : sql`${sql.identifier(options.schema)}.${sql.identifier(name)}`;
   // sql.param, not a bare interpolation: drizzle expands an interpolated array
   // into a parenthesised list of parameters - a row, not the Postgres array
-  // the function expects.
+  // the function expects. Values are not encoded here: postgres-js 4 learns
+  // each parameter's type from the server and serializes for it (JSON for
+  // json/jsonb), so encoding an object first would store a JSON string.
   const named = Object.entries(args)
     .filter(([, value]) => value !== undefined)
-    .map(
-      ([parameter, value]) =>
-        sql`${sql.identifier(parameter)} => ${sql.param(toFunctionArgument(value))}`,
-    );
+    .map(([parameter, value]) => sql`${sql.identifier(parameter)} => ${sql.param(value)}`);
   return db.execute<TRow>(sql`select * from ${target}(${sql.join(named, sql`, `)})`, "objects");
 }
 

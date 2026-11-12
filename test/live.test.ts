@@ -75,6 +75,8 @@ describe.skipIf(url === undefined)("against a real postgres", () => {
       $$;
       create function capydb_drizzle_test.add(a int, b int) returns int
       language sql as $$ select a + b $$;
+      create function capydb_drizzle_test.json_kind(p_doc jsonb) returns text
+      language sql as $$ select jsonb_typeof(p_doc) $$;
       create table capydb_drizzle_test.events (id serial primary key, note text not null);
     `);
   });
@@ -94,6 +96,20 @@ describe.skipIf(url === undefined)("against a real postgres", () => {
         { schema: "capydb_drizzle_test" },
       );
       expect(rows).toEqual([{ text_out: "capy!", doc_out: { tags: ["a", "b"] }, id_count: 3 }]);
+    });
+
+    it("hands a jsonb parameter the object or array itself, not a JSON string", async () => {
+      const kind = async (value: unknown) =>
+        (
+          await callFunction<{ json_kind: string }>(
+            db,
+            "json_kind",
+            { p_doc: value },
+            { schema: "capydb_drizzle_test" },
+          )
+        )[0]?.json_kind;
+      expect(await kind({ tags: ["a"] })).toBe("object");
+      expect(await kind([1, { n: 2 }])).toBe("array");
     });
 
     it("lets parameter defaults apply for undefined arguments", async () => {
