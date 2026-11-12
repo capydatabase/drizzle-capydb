@@ -153,17 +153,17 @@ it only sees a slower connect. What needs handling is a connection that was
 already open when the cell paused - a long-lived server between requests, or a
 serverless instance frozen between invocations:
 
-- the statement in flight fails with `CONNECTION_CLOSED`,
-- the next statement on that connection receives the server's `57P01`
-  (`terminating connection due to administrator command`),
-- the one after that reconnects cleanly - postgres-js replaces the dead
+- the statement on that connection fails with the server's `57P01`
+  (`terminating connection due to administrator command`) - the statement in
+  flight, or the first one sent before postgres-js has seen the closed socket,
+- the next statement reconnects cleanly - postgres-js replaces the dead
   connection itself.
 
 CapyDB does not pause a cell while a statement or transaction is open on it,
 so in practice this hits idle connections, and the failing statement is the
 first one after the pause.
 
-`retryOnPause` absorbs exactly those failures and rethrows everything else
+`retryOnPause` absorbs pause and resume failures and rethrows everything else
 untouched. Wrap work that is safe to run twice - a read, or a whole
 transaction (one cut off by the pause was rolled back by the server):
 
@@ -183,8 +183,9 @@ not wrap a single write outside a transaction: if the connection closed after
 the server committed, the retry would apply it twice. Nothing in this package
 retries implicitly, because only you know which work is idempotent.
 
-The default budget is 3 attempts (100 ms backoff, doubling, at most 2 s) -
-the minimum that covers both failures. When it runs out, `retryOnPause`
+The default budget is 3 attempts (100 ms backoff, doubling, at most 2 s): the
+failed statement, the reconnect, and one spare for a cell that is still
+resuming. When it runs out, `retryOnPause`
 throws `CellPausedError`, with the last pause error as its `cause`. Tune it
 with `{ attempts, baseDelayMs, maxDelayMs, signal }`.
 

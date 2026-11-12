@@ -147,16 +147,16 @@ describe.skipIf(url === undefined)("against a real postgres", () => {
   });
 
   describe("a pause under an open connection", () => {
-    it("fails the statement in flight and the next one, then reconnects", async () => {
+    it("fails only the statement in flight, then reconnects", async () => {
       await db.execute(sql`select 1`); // open the connection
       const inFlight = outcome(db.execute(sql`select pg_sleep(5) /* capydb-pause-1 */`));
       await waitForStatement("capydb-pause-1");
       expect(await terminate("capydb-pause-1")).toBe(1);
 
-      // The two failures retryOnPause exists to absorb. Both are recognised.
-      expect(await inFlight).toBe("CONNECTION_CLOSED");
-      expect(await outcome(db.execute(sql`select 1`))).toBe("57P01");
-      // ...and postgres-js has reconnected by the third statement.
+      // postgres-js 4 surfaces the server's 57P01 on the statement in flight (3.4.9
+      // failed it with CONNECTION_CLOSED and the next statement with 57P01)...
+      expect(await inFlight).toBe("57P01");
+      // ...and has already replaced the connection for the next statement.
       expect(await outcome(db.execute(sql`select 1`))).toBe("ok");
     });
 
@@ -173,7 +173,8 @@ describe.skipIf(url === undefined)("against a real postgres", () => {
       await waitForStatement("capydb-pause-2");
       await terminate("capydb-pause-2");
       await expect(read).resolves.toBe(7);
-      expect(attempts).toBe(3);
+      // The killed attempt and the one that reconnected.
+      expect(attempts).toBe(2);
     });
 
     it("re-runs a whole transaction exactly once in effect", async () => {
@@ -184,15 +185,11 @@ describe.skipIf(url === undefined)("against a real postgres", () => {
           attempts += 1;
           await tx.execute(sql`insert into capydb_drizzle_test.events (note) values ('once')`);
           if (attempts === 1) {
-            // Terminated while idle in the transaction, between two statements.
-            // The wait lets postgres-js observe the closed socket before this
-            // callback would issue anything else: postgres-js 3.4.9 has a race
-            // where a write queued on a socket that closes in the same tick
-            // throws from a timer and wedges the client, which is a driver bug
-            // this test is not about.
+            // Terminated while idle in the transaction, between two statements; the
+            // COMMIT that follows fails. (postgres-js 3.4.9 needed a pause here: a write
+            // queued on a socket closing in the same tick wedged the client. 4 does not.)
             const [row] = await tx.execute<{ pid: number }>(sql`select pg_backend_pid() as pid`);
             await admin`select pg_terminate_backend(${row?.pid ?? 0})`;
-            await new Promise((resolve) => setTimeout(resolve, 500));
             return;
           }
           await tx.execute(sql`select 1`);
@@ -205,7 +202,7 @@ describe.skipIf(url === undefined)("against a real postgres", () => {
       expect(attempts).toBeGreaterThan(1);
     });
 
-    it("recognises every failure it produces as a pause condition", async () => {
+    it("recognises the failure it produces as a pause condition", async () => {
       await db.execute(sql`select 1`);
       const inFlight = db.execute(sql`select pg_sleep(5) /* capydb-pause-3 */`).then(
         () => undefined,
@@ -214,11 +211,7 @@ describe.skipIf(url === undefined)("against a real postgres", () => {
       await waitForStatement("capydb-pause-3");
       await terminate("capydb-pause-3");
       expect(isCellWakingError(await inFlight)).toBe(true);
-      const next = await db.execute(sql`select 1`).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect(isCellWakingError(next)).toBe(true);
+      expect(await outcome(db.execute(sql`select 1`))).toBe("ok");
     });
   });
 

@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The scale-to-zero docs describe postgres.js 4: a pause fails one statement with `57P01` and the
+  next one reconnects (postgres.js 3 failed two, `CONNECTION_CLOSED` then `57P01`). The live tests
+  assert that sequence; `retryOnPause` keeps its 3-attempt default. CI had been red since the
+  postgres.js 4 dev bump on 2026-11-08 because the tests still encoded the 3.4.9 sequence.
 - Dev tooling: drizzle-orm 1.0.0-rc.5 (the tagged rc.5 release instead of the `rc5` branch build), postgres 4.1.1, oxlint 1.93, oxfmt 0.78, pnpm 12.20.0. No runtime change.
 
 ## [1.11.0] - 2026-11-08

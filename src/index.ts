@@ -420,10 +420,9 @@ export function createDirectDb<TRelations extends AnyRelations = EmptyRelations>
 const WAKE_TRANSIENT_CODES = new Set([
   "57P01", // admin_shutdown - the cell was paused mid-session
   "57P03", // cannot_connect_now - still resuming
-  // postgres-js's own code for "the server closed this socket". It is what a
-  // statement in flight at the moment of the pause actually receives: the
-  // 57P01 the server sent is then delivered to the NEXT statement on that
-  // connection, and only the one after that reconnects cleanly.
+  // postgres-js's own code for "the server closed this socket" - what a
+  // statement receives when the socket closes without the server's 57P01
+  // reaching it first (postgres.js 3 reported every pause this way).
   "CONNECTION_CLOSED",
   "08006", // connection_failure
   "08001", // sqlclient_unable_to_establish_sqlconnection
@@ -784,10 +783,11 @@ export type WaitForWakeOptions = PauseRetryOptions;
 
 /**
  * Options for {@link retryOnPause}. Defaults: 3 attempts, 100 ms doubling to at
- * most 2000 ms. Three is the minimum that rides out a pause: the statement in
- * flight fails with `CONNECTION_CLOSED`, the next one receives the server's
- * `57P01`, and the third reconnects - through the routing layer, which holds
- * the new connection while the cell resumes.
+ * most 2000 ms. A pause fails one statement - the one in flight, or the first
+ * one sent before postgres-js has seen the closed socket - with the server's
+ * `57P01`; the next attempt reconnects through the routing layer, which holds
+ * the new connection while the cell resumes. The third attempt is headroom for
+ * a connection that fails while the cell is still resuming (`57P03`).
  */
 export type RetryOnPauseOptions = PauseRetryOptions;
 
@@ -882,8 +882,8 @@ export async function waitForWake(client: Sql, options: WaitForWakeOptions = {})
  * Run idempotent work, re-running it when the cell was paused underneath it.
  *
  * Scale-to-zero can pause a cell between two requests, and the connections it
- * held die with it. postgres-js reconnects on its own, but not before up to two
- * statements fail on the dead connection (see {@link RetryOnPauseOptions}).
+ * held die with it. postgres-js reconnects on its own, but not before the
+ * statement on the dead connection fails (see {@link RetryOnPauseOptions}).
  * This absorbs exactly those failures and nothing else: any other error is
  * rethrown untouched on the first attempt.
  *
