@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.2] - 2026-11-17
+
 ### Changed
 
 - Dev tooling: oxlint 1.94, oxfmt 0.79, `typescript@next` 7.1.0-dev.20261117.1, pnpm 12.21.0. No
@@ -248,7 +250,8 @@ All three come from the myroomiev3 migration, where each cost a debugging round.
 - Initial release: `createDb`/`createDirectDb` factories with pooler-safe transaction-mode defaults (`prepare: false` on :6432), `resolveConnectionString`, `isPooledUrl`, and `resolveClientOptions`.
 - `createDirectDb` enforces a direct (non-pooled) connection for migrations.
 
-[Unreleased]: https://github.com/capydatabase/drizzle-capydb/compare/v1.11.1...HEAD
+[Unreleased]: https://github.com/capydatabase/drizzle-capydb/compare/v1.11.2...HEAD
+[1.11.2]: https://github.com/capydatabase/drizzle-capydb/compare/v1.11.1...v1.11.2
 [1.11.1]: https://github.com/capydatabase/drizzle-capydb/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/capydatabase/drizzle-capydb/compare/v1.9.0...v1.10.0
