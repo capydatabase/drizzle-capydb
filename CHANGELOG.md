@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dev tooling: `drizzle-orm` dev dependency 1.0.0-rc.6 (the peer range still accepts
+  1.0.0-rc.5+), vitest 5.1.1, `typescript@next` 7.1.0-dev.20261120.1, pnpm 12.22.0; `engines.node`
+  is `>=24.22.3`. No runtime change.
+
 ## [1.11.2] - 2026-11-17
 
 ### Changed
